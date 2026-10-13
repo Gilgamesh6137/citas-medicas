@@ -1,0 +1,25 @@
+package com.damian.medicos.repository;
+
+import com.damian.commons.enums.EstadoRegistro;
+import com.damian.medicos.entity.Medico;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface MedicoRepository extends JpaRepository<Medico, Long> {
+
+    List<Medico> findByEstadoRegistro(EstadoRegistro estadoRegistro);
+    Optional<Medico> findByIdAndEstadoRegistro(Long id, EstadoRegistro estadoRegistro);
+
+    boolean existsByEmailIgnoreCaseAndEstadoRegistro(String email, EstadoRegistro estadoRegistro);
+    boolean existsByEmailIgnoreCaseAndEstadoRegistroAndIdNot(String email, EstadoRegistro estadoRegistro, Long id);
+
+    boolean existsByTelefonoAndEstadoRegistro(String telefono, EstadoRegistro estadoRegistro);
+    boolean existsByTelefonoAndEstadoRegistroAndIdNot(String telefono, EstadoRegistro estadoRegistro, Long id);
+
+    boolean existsByCedulaProfesionalIgnoreCaseAndEstadoRegistro(String cedula, EstadoRegistro estadoRegistro);
+    boolean existsByCedulaProfesionalIgnoreCaseAndEstadoRegistroAndIdNot(String cedula, EstadoRegistro estadoRegistro, Long id);
+}
