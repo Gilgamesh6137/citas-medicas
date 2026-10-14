@@ -68,9 +68,9 @@ public class MedicoServiceImpl implements MedicoService{
 
     @Override
     public MedicoResponse actualizar(MedicoRequest request, Long id) {
-        validarCambiosUnicos(request, id);
         Medico medico = obtenerMedicoActivoPorId(id);
         validarMedicoActualizarOEliminar(id);
+        validarCambiosUnicos(request, id);
         log.info("Actualizando médico con id: {}", id);
 
         medico.actualizar(

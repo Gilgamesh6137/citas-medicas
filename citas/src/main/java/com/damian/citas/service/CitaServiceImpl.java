@@ -79,18 +79,18 @@ public class CitaServiceImpl implements CitaService{
         if (cita.getEstadoCita() == EstadoCita.EN_CURSO)
             throw new ConflictoException("La cita está en curso y no puede actualizarse");
 
-        Long idMedicoAntiguo = cita.getIdMedico();
-        Long idPacienteAntiguo = cita.getIdPaciente();
-        boolean cambioDeMedico = !idMedicoAntiguo.equals(request.idMedico());
+        boolean cambioDeMedico = !cita.getIdMedico().equals(request.idMedico());
+        boolean cambioDePaciente = !cita.getIdPaciente().equals(request.idPaciente());
+        Long idMedico = cambioDeMedico ? request.idMedico() : cita.getIdMedico();
+        Long idPaciente = cambioDePaciente ? request.idPaciente() : cita.getIdPaciente();
 
-        if (cambioDeMedico) {
-            MedicoResponse nuevoMedico = obtenerMedicoActivo(request.idMedico());
-            validarMedicoActivoDisponible(nuevoMedico);
-        }
+        MedicoResponse medico = obtenerMedicoActivo(idMedico);
+        if (cambioDeMedico)
+            validarMedicoActivoDisponible(medico);
 
-        if (!idPacienteAntiguo.equals(request.idPaciente())) {
+        PacienteResponse paciente = obtenerPacienteActivo(idPaciente);
+        if (cambioDePaciente)
             validarPacienteNoTieneCitasActivas(request.idPaciente());
-        }
 
         log.info("Actualizando cita con id: {}", id);
         cita.actualizar(request.idPaciente(), request.idMedico(), request.fechaCita(), request.sintomas());
@@ -98,13 +98,11 @@ public class CitaServiceImpl implements CitaService{
         log. info("Cita actualizada con id: {}", id);
 
         if (cambioDeMedico){
-            actualizarDisponibilidadMedico(idMedicoAntiguo, DisponibilidadMedico.DISPONIBLE.getCodigo());
+            actualizarDisponibilidadMedico(cita.getIdMedico(), DisponibilidadMedico.DISPONIBLE.getCodigo());
             actualizarDisponibilidadMedico(request.idMedico(), DisponibilidadMedico.NO_DISPONIBLE.getCodigo());
         }
 
-        MedicoResponse medicoFinal = obtenerMedicoActivo(cita.getIdMedico());
-        PacienteResponse pacienteFinal = obtenerPacienteActivo(cita.getIdPaciente());
-        return citaMapper.entidadAResponse(cita, pacienteFinal, medicoFinal);
+        return citaMapper.entidadAResponse(cita, paciente, medico);
     }
 
     @Override
