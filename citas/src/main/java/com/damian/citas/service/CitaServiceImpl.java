@@ -75,17 +75,17 @@ public class CitaServiceImpl implements CitaService{
     @Override
     public CitaResponse actualizar(CitaRequest request, Long id) {
         Cita cita = obtenerCitaOException(id);
-        validarEstadoCita(cita.getEstadoCita());
+
+        if (cita.getEstadoCita() == EstadoCita.EN_CURSO)
+            throw new ConflictoException("La cita está en curso y no puede actualizarse");
 
         Long idMedicoAntiguo = cita.getIdMedico();
         Long idPacienteAntiguo = cita.getIdPaciente();
+        boolean cambioDeMedico = !idMedicoAntiguo.equals(request.idMedico());
 
-        if (!idMedicoAntiguo.equals(request.idMedico())) {
+        if (cambioDeMedico) {
             MedicoResponse nuevoMedico = obtenerMedicoActivo(request.idMedico());
             validarMedicoActivoDisponible(nuevoMedico);
-
-            actualizarDisponibilidadMedico(idMedicoAntiguo, DisponibilidadMedico.DISPONIBLE.getCodigo());
-            actualizarDisponibilidadMedico(request.idMedico(), DisponibilidadMedico.NO_DISPONIBLE.getCodigo());
         }
 
         if (!idPacienteAntiguo.equals(request.idPaciente())) {
@@ -96,6 +96,11 @@ public class CitaServiceImpl implements CitaService{
         cita.actualizar(request.idPaciente(), request.idMedico(), request.fechaCita(), request.sintomas());
         citaRepository.saveAndFlush(cita);
         log. info("Cita actualizada con id: {}", id);
+
+        if (cambioDeMedico){
+            actualizarDisponibilidadMedico(idMedicoAntiguo, DisponibilidadMedico.DISPONIBLE.getCodigo());
+            actualizarDisponibilidadMedico(request.idMedico(), DisponibilidadMedico.NO_DISPONIBLE.getCodigo());
+        }
 
         MedicoResponse medicoFinal = obtenerMedicoActivo(cita.getIdMedico());
         PacienteResponse pacienteFinal = obtenerPacienteActivo(cita.getIdPaciente());
@@ -149,17 +154,6 @@ public class CitaServiceImpl implements CitaService{
         log.info("Buscando cita con id: {}", id);
         return citaRepository.findById(id).orElseThrow(() ->
                 new RecursoNoEncontradoException("Cita no encontrada con id: " + id));
-    }
-
-    private void validarEstadoCita(EstadoCita estado) {
-        if (estado == EstadoCita.EN_CURSO)
-            throw new ConflictoException("La cita está en curso y no puede actualizarse");
-
-        if (estado == EstadoCita.FINALIZADA)
-            throw new ConflictoException("La cita ha finalizado y ya no puede actualizarse");
-
-        if (estado == EstadoCita.CANCELADA)
-            throw new ConflictoException("La cita ha sido cancelada y ya no puede actualizarse");
     }
 
     //=== Métodos Medicos ===

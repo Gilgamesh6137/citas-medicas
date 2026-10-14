@@ -69,8 +69,8 @@ public class MedicoServiceImpl implements MedicoService{
     @Override
     public MedicoResponse actualizar(MedicoRequest request, Long id) {
         validarCambiosUnicos(request, id);
-        validarMedicoActualizarOEliminar(id);
         Medico medico = obtenerMedicoActivoPorId(id);
+        validarMedicoActualizarOEliminar(id);
         log.info("Actualizando médico con id: {}", id);
 
         medico.actualizar(
@@ -103,8 +103,8 @@ public class MedicoServiceImpl implements MedicoService{
 
     @Override
     public void eliminar(Long id) {
-        validarMedicoActualizarOEliminar(id);
         Medico medico = obtenerMedicoActivoPorId(id);
+        validarMedicoActualizarOEliminar(id);
 
         log.info("Crucificando al médico con id: {}", id);
         medico.eliminar();
