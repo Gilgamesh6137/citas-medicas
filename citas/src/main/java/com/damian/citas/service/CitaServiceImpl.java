@@ -7,7 +7,9 @@ import com.damian.citas.enums.EstadoCita;
 import com.damian.citas.mapper.CitaMapper;
 import com.damian.citas.repository.CitaRepository;
 import com.damian.commons.clients.MedicoClient;
+import com.damian.commons.clients.PacienteClient;
 import com.damian.commons.dto.medicos.MedicoResponse;
+import com.damian.commons.dto.pacientes.PacienteResponse;
 import com.damian.commons.enums.DisponibilidadMedico;
 import com.damian.commons.enums.EstadoRegistro;
 import com.damian.commons.exceptions.ConflictoException;
@@ -27,22 +29,29 @@ public class CitaServiceImpl implements CitaService{
 
     private final CitaRepository citaRepository;
     private final CitaMapper citaMapper;
+
     private final MedicoClient medicoClient;
+    private final PacienteClient pacienteClient;
+
+    private final List<EstadoCita> estadoCitas = List.of(EstadoCita.PENDIENTE, EstadoCita.CONFIRMADA, EstadoCita.EN_CURSO);
 
     @Override
     @Transactional(readOnly = true)
     public List<CitaResponse> listar() {
         log.info("Listando todas las citas activas");
         return citaRepository.findByEstadoRegistro(EstadoRegistro.ACTIVO).stream()
-                .map(cita -> citaMapper.entidadAResponse(
-                        cita, null, obtenerMedicoSinEstado(cita.getIdMedico()))).toList();
+                .map(cita -> citaMapper.entidadAResponse(cita,
+                        obtenerPacienteSinEstado(cita.getIdPaciente()),
+                        obtenerMedicoSinEstado(cita.getIdMedico()))
+                ).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public CitaResponse obtenerPorId(Long id) {
         Cita cita = obtenerCitaOException(id);
-        return citaMapper.entidadAResponse(cita, null, obtenerMedicoSinEstado(cita.getIdMedico()));
+        return citaMapper.entidadAResponse(
+                cita, obtenerPacienteSinEstado(cita.getIdPaciente()), obtenerMedicoSinEstado(cita.getIdMedico()));
     }
 
     @Override
@@ -51,34 +60,46 @@ public class CitaServiceImpl implements CitaService{
 
         MedicoResponse medico = obtenerMedicoActivo(request.idMedico());
         validarMedicoActivoDisponible(medico);
+
+        PacienteResponse paciente = obtenerPacienteActivo(request.idPaciente());
+        validarPacienteNoTieneCitasActivas(paciente.id());
+
         Cita cita = citaMapper.requestAEntidad(request);
         citaRepository.saveAndFlush(cita);
 
         log.info("Cita registrada exitosamente");
         cambiarDisponibilidadMedicoSegunEstadoCita(medico.id(), cita.getEstadoCita());
-        return citaMapper.entidadAResponse(cita, null, medico);
+        return citaMapper.entidadAResponse(cita, paciente, medico);
     }
 
     @Override
     public CitaResponse actualizar(CitaRequest request, Long id) {
         Cita cita = obtenerCitaOException(id);
+        validarEstadoCita(cita.getEstadoCita());
 
-        if (cita.getEstadoCita() == EstadoCita.EN_CURSO)
-            throw new ConflictoException("La cita está en curso y no puede actualizarse");
+        Long idMedicoAntiguo = cita.getIdMedico();
+        Long idPacienteAntiguo = cita.getIdPaciente();
 
-        MedicoResponse medico = obtenerMedicoActivo(request.idMedico());
+        if (!idMedicoAntiguo.equals(request.idMedico())) {
+            MedicoResponse nuevoMedico = obtenerMedicoActivo(request.idMedico());
+            validarMedicoActivoDisponible(nuevoMedico);
+
+            actualizarDisponibilidadMedico(idMedicoAntiguo, DisponibilidadMedico.DISPONIBLE.getCodigo());
+            actualizarDisponibilidadMedico(request.idMedico(), DisponibilidadMedico.NO_DISPONIBLE.getCodigo());
+        }
+
+        if (!idPacienteAntiguo.equals(request.idPaciente())) {
+            validarPacienteNoTieneCitasActivas(request.idPaciente());
+        }
+
         log.info("Actualizando cita con id: {}", id);
-
-        cita.actualizar(
-                request.idPaciente(),
-                request.idMedico(),
-                request.fechaCita(),
-                request.sintomas()
-        );
+        cita.actualizar(request.idPaciente(), request.idMedico(), request.fechaCita(), request.sintomas());
         citaRepository.saveAndFlush(cita);
-
         log. info("Cita actualizada con id: {}", id);
-        return citaMapper.entidadAResponse(cita, null, medico);
+
+        MedicoResponse medicoFinal = obtenerMedicoActivo(cita.getIdMedico());
+        PacienteResponse pacienteFinal = obtenerPacienteActivo(cita.getIdPaciente());
+        return citaMapper.entidadAResponse(cita, pacienteFinal, medicoFinal);
     }
 
     @Override
@@ -99,25 +120,56 @@ public class CitaServiceImpl implements CitaService{
         log.info("Eliminando cita con id: {}", id);
 
         cita.eliminar();
+        citaRepository.saveAndFlush(cita);
+
         if (cita.getEstadoCita() == EstadoCita.PENDIENTE)
             actualizarDisponibilidadMedico(cita.getIdMedico(), DisponibilidadMedico.DISPONIBLE.getCodigo());
 
         log.info("Cita con id {} ha sido marcada como eliminada", id);
     }
 
+    @Override
+    public void validarMedicoNoTieneCitasActivas(Long id) {
+        log.info("Validando que el medico con id: {} no tenga citas activas", id);
+
+        if (citaRepository.existsByIdMedicoAndEstadoRegistroAndEstadoCitaIn(id, EstadoRegistro.ACTIVO, estadoCitas))
+            throw new ConflictoException("El medico con id: " + id + " ya tiene una cita activa");
+    }
+
+    @Override
+    public void validarPacienteNoTieneCitasActivas(Long id){
+        log.info("Validando que el paciente con id: {} no tenga citas activas", id);
+
+        if (citaRepository.existsByIdPacienteAndEstadoRegistroAndEstadoCitaIn(id, EstadoRegistro.ACTIVO, estadoCitas))
+            throw new ConflictoException("El paciente con id: " + id + " ya tiene una cita activa");
+    }
+
+    //=== Métodos Citas ===
     private Cita obtenerCitaOException(Long id){
         log.info("Buscando cita con id: {}", id);
         return citaRepository.findById(id).orElseThrow(() ->
                 new RecursoNoEncontradoException("Cita no encontrada con id: " + id));
     }
 
+    private void validarEstadoCita(EstadoCita estado) {
+        if (estado == EstadoCita.EN_CURSO)
+            throw new ConflictoException("La cita está en curso y no puede actualizarse");
+
+        if (estado == EstadoCita.FINALIZADA)
+            throw new ConflictoException("La cita ha finalizado y ya no puede actualizarse");
+
+        if (estado == EstadoCita.CANCELADA)
+            throw new ConflictoException("La cita ha sido cancelada y ya no puede actualizarse");
+    }
+
+    //=== Métodos Medicos ===
     private MedicoResponse obtenerMedicoActivo(Long id){
-        log.info("buscando médico activo con id {} en el servicio remoto...", id);
+        log.info("Buscando médico activo con id {} en el servicio remoto...", id);
         return medicoClient.obtenerMedicoActivoPorId(id);
     }
 
     private MedicoResponse obtenerMedicoSinEstado(Long id){
-        log.info("buscando médico sin estado con id {} en el servicio remoto...", id);
+        log.info("Buscando médico sin estado con id {} en el servicio remoto...", id);
         return medicoClient.obtenerMedicoSinEstadoPorId(id);
     }
 
@@ -142,5 +194,16 @@ public class CitaServiceImpl implements CitaService{
             case FINALIZADA, CANCELADA ->
                     actualizarDisponibilidadMedico(idMedico, DisponibilidadMedico.DISPONIBLE.getCodigo());
         }
+    }
+
+    //=== Métodos Pacientes ===
+    private PacienteResponse obtenerPacienteActivo(Long id){
+        log.info("Buscando paciente activo con id {} en el servicio remoto...", id);
+        return pacienteClient.obtenerPacienteActivoPorId(id);
+    }
+
+    private PacienteResponse obtenerPacienteSinEstado(Long id){
+        log.info("Buscando paciente sin estado con id {} en el servicio remoto...", id);
+        return pacienteClient.obtenerPacienteSinEstadoPorId(id);
     }
 }

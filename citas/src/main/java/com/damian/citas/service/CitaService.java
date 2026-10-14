@@ -7,4 +7,6 @@ import com.damian.commons.service.CrudService;
 public interface CitaService extends CrudService<CitaRequest, CitaResponse> {
 
     void actualizarEstadoCita(Long idCita, Long idEstadoCita);
+    void validarMedicoNoTieneCitasActivas(Long idMedico);
+    void validarPacienteNoTieneCitasActivas(Long idPaciente);
 }
