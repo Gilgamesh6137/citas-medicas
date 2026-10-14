@@ -66,8 +66,8 @@ public class PacienteServiceImpl implements PacienteService {
     @Override
     public PacienteResponse actualizar(PacienteRequest request, Long id) {
         validarCambiosUnicos(request, id);
-        validarPacienteActualizarOEliminar(id);
         Paciente paciente = obtenerPaciente(id);
+        validarPacienteActualizarOEliminar(id);
         log.info("Actualizando paciente con id {}", id);
 
         paciente.actualizar(
@@ -89,8 +89,8 @@ public class PacienteServiceImpl implements PacienteService {
 
     @Override
     public void eliminar(Long id) {
-        validarPacienteActualizarOEliminar(id);
         Paciente paciente = obtenerPaciente(id);
+        validarPacienteActualizarOEliminar(id);
         log.info("Eliminando paciente con id {}", id);
 
         paciente.eliminar();
