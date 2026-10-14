@@ -1,5 +1,6 @@
 package com.damian.pacientes.service;
 
+import com.damian.commons.clients.CitaClient;
 import com.damian.commons.dto.pacientes.PacienteRequest;
 import com.damian.commons.dto.pacientes.PacienteResponse;
 import com.damian.commons.enums.EstadoRegistro;
@@ -8,6 +9,7 @@ import com.damian.commons.exceptions.RecursoNoEncontradoException;
 import com.damian.pacientes.entity.Paciente;
 import com.damian.pacientes.mapper.PacienteMapper;
 import com.damian.pacientes.repository.PacienteRepository;
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,8 +25,10 @@ public class PacienteServiceImpl implements PacienteService {
 
     private final PacienteRepository pacienteRepository;
     private final PacienteMapper pacienteMapper;
+    private final CitaClient citaClient;
 
     @Override
+    @Transactional(readOnly = true)
     public List<PacienteResponse> listar() {
         log.info("Listando todos los pacientes activos");
 
@@ -33,16 +37,18 @@ public class PacienteServiceImpl implements PacienteService {
     }
 
     @Override
-    public List<PacienteResponse> listarEliminados() {
-        log.info("Listando todos los pacientes eliminados");
-
-        return pacienteRepository.findByEstadoRegistro(EstadoRegistro.ELIMINADO).stream()
-                .map(pacienteMapper::entidadAResponse).toList();
+    @Transactional(readOnly = true)
+    public PacienteResponse obtenerPorId(Long id) {
+        return pacienteMapper.entidadAResponse(obtenerPaciente(id));
     }
 
     @Override
-    public PacienteResponse obtenerPorId(Long id) {
-        return pacienteMapper.entidadAResponse(obtenerPaciente(id));
+    @Transactional(readOnly = true)
+    public PacienteResponse obtenerPacientePorIdSinEstado(Long id) {
+        log.info("Buscando paciente sin estado con id {}", id);
+
+        return pacienteMapper.entidadAResponse(pacienteRepository.findById(id).orElseThrow(
+                () -> new RecursoNoEncontradoException("Paciente sin estado no encontrado con id: " + id)));
     }
 
     @Override
@@ -51,7 +57,7 @@ public class PacienteServiceImpl implements PacienteService {
         log.info("Registrando nuevo paciente: {}", request.nombre());
 
         Paciente paciente = pacienteMapper.requestAEntidad(request);
-        pacienteRepository.save(paciente);
+        pacienteRepository.saveAndFlush(paciente);
 
         log.info("Nuevo paciente: {} registrado correctamente", paciente.getNombre());
         return pacienteMapper.entidadAResponse(paciente);
@@ -60,6 +66,7 @@ public class PacienteServiceImpl implements PacienteService {
     @Override
     public PacienteResponse actualizar(PacienteRequest request, Long id) {
         validarCambiosUnicos(request, id);
+        validarPacienteActualizarOEliminar(id);
         Paciente paciente = obtenerPaciente(id);
         log.info("Actualizando paciente con id {}", id);
 
@@ -82,6 +89,7 @@ public class PacienteServiceImpl implements PacienteService {
 
     @Override
     public void eliminar(Long id) {
+        validarPacienteActualizarOEliminar(id);
         Paciente paciente = obtenerPaciente(id);
         log.info("Eliminando paciente con id {}", id);
 
@@ -91,15 +99,14 @@ public class PacienteServiceImpl implements PacienteService {
     }
 
     private Paciente obtenerPaciente(Long id){
-        log.info("Obteniendo paciente con el ID: {}", id);
+        log.info("Buscando paciente activo con id: {}", id);
 
         return pacienteRepository.findByIdAndEstadoRegistro(id, EstadoRegistro.ACTIVO).orElseThrow(() ->
-                new RecursoNoEncontradoException("Paciente no encontrado con ID: " + id)
-        );
+                new RecursoNoEncontradoException("Paciente no encontrado con id: " + id));
     }
 
     private void validarDatosUnicos(PacienteRequest request){
-        log.info("Validando email y teléfono únicos");
+        log.info("Validando email y teléfono únicos...");
 
         if (pacienteRepository.existsByEmailIgnoreCaseAndEstadoRegistro(request.email().trim(), EstadoRegistro.ACTIVO))
             throw new ConflictoException("El email: " + request.email() + " ya está registrado");
@@ -109,12 +116,20 @@ public class PacienteServiceImpl implements PacienteService {
     }
 
     private void validarCambiosUnicos(PacienteRequest request, Long id){
-        log.info("Validando cambios en el email y teléfono únicos");
+        log.info("Validando cambios en el email y teléfono únicos...");
 
         if (pacienteRepository.existsByEmailIgnoreCaseAndEstadoRegistroAndIdNot(request.email(), EstadoRegistro.ACTIVO, id))
             throw new ConflictoException("El email: " + request.email() + " ya está registrado");
 
         if (pacienteRepository.existsByTelefonoAndEstadoRegistroAndIdNot(request.telefono(), EstadoRegistro.ACTIVO, id))
             throw new ConflictoException("El teléfono: " + request.telefono() + " ya está registrado");
+    }
+
+    private void validarPacienteActualizarOEliminar(Long id){
+        try {
+            citaClient.validarPacienteNoTieneCitasActivas(id);
+        } catch (FeignException.Conflict e){
+            throw new ConflictoException("El paciente con id: " + id + " tiene citas activas y no puede ser eliminado o actualizado");
+        }
     }
 }

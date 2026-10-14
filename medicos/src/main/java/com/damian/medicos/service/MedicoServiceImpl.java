@@ -1,15 +1,18 @@
 package com.damian.medicos.service;
 
+import com.damian.commons.clients.CitaClient;
 import com.damian.commons.dto.medicos.MedicoRequest;
 import com.damian.commons.dto.medicos.MedicoResponse;
 import com.damian.commons.enums.DisponibilidadMedico;
 import com.damian.commons.enums.EspecialidadMedico;
 import com.damian.commons.enums.EstadoRegistro;
+import com.damian.commons.exceptions.ConflictoException;
 import com.damian.commons.exceptions.DatoInvalidoException;
 import com.damian.commons.exceptions.RecursoNoEncontradoException;
 import com.damian.medicos.entity.Medico;
 import com.damian.medicos.mapper.MedicoMapper;
 import com.damian.medicos.repository.MedicoRepository;
+import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +28,7 @@ public class MedicoServiceImpl implements MedicoService{
 
     private final MedicoRepository medicoRepository;
     private final MedicoMapper medicoMapper;
+    private final CitaClient citaClient;
 
     @Override
     @Transactional(readOnly = true)
@@ -64,8 +68,9 @@ public class MedicoServiceImpl implements MedicoService{
 
     @Override
     public MedicoResponse actualizar(MedicoRequest request, Long id) {
-        Medico medico = obtenerMedicoActivoPorId(id);
         validarCambiosUnicos(request, id);
+        validarMedicoActualizarOEliminar(id);
+        Medico medico = obtenerMedicoActivoPorId(id);
         log.info("Actualizando médico con id: {}", id);
 
         medico.actualizar(
@@ -98,9 +103,10 @@ public class MedicoServiceImpl implements MedicoService{
 
     @Override
     public void eliminar(Long id) {
+        validarMedicoActualizarOEliminar(id);
         Medico medico = obtenerMedicoActivoPorId(id);
-        log.info("Crucificando al médico con id: {}", id);
 
+        log.info("Crucificando al médico con id: {}", id);
         medico.eliminar();
         medicoRepository.saveAndFlush(medico);
         log.info("Médico ha sido crucificado exitósamente");
@@ -145,5 +151,13 @@ public class MedicoServiceImpl implements MedicoService{
 
         if (medicoRepository.existsByCedulaProfesionalIgnoreCaseAndEstadoRegistroAndIdNot(request.cedulaProfesional(), EstadoRegistro.ACTIVO, id))
             throw new DatoInvalidoException("Ya existe un médico activo registrado con la cédula profesional: " + request.cedulaProfesional());
+    }
+
+    private void validarMedicoActualizarOEliminar(Long id){
+        try {
+            citaClient.validarMedicoNoTieneCitasActivas(id);
+        } catch (FeignException.Conflict e){
+            throw new ConflictoException("El medico con id: " + id + " tiene citas activas y no puede ser eliminado o actualizado");
+        }
     }
 }

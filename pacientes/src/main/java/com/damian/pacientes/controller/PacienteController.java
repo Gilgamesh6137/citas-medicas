@@ -1,17 +1,20 @@
 package com.damian.pacientes.controller;
 
 import com.damian.commons.controller.CrudController;
+import com.damian.commons.docs.ProblemaDoc;
 import com.damian.commons.dto.pacientes.PacienteRequest;
 import com.damian.commons.dto.pacientes.PacienteResponse;
 import com.damian.pacientes.service.PacienteService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 @RestController
 @Tag(name = "API Pacientes", description = "Métodos para la gestion de pacientes")
@@ -21,10 +24,14 @@ public class PacienteController extends CrudController<PacienteRequest, Paciente
         super(service);
     }
 
-    @GetMapping("pacientes-eliminados/")
-    @Operation(summary = "Listar pacientes eliminados")
-    @ApiResponse(responseCode = "200", description = "Listado obtenido")
-    public ResponseEntity<List<PacienteResponse>> listarEliminados() {
-        return ResponseEntity.ok(service.listarEliminados());
+    @GetMapping("/id-paciente/{id}")
+    @Operation(summary = "Obtener paciente por id sin importar el estado del registro")
+    @ApiResponse(responseCode = "200", description = "Paciente sin estado encontrado")
+    @ApiResponse(responseCode = "404", description = "El paciente sin estado no existe",
+            content = @Content(mediaType = "application/problem+json", schema = @Schema(implementation = ProblemaDoc.class)))
+    public ResponseEntity<PacienteResponse> obtenerPacientePorIdSinEstado(
+            @PathVariable @Positive(message = "El ID debe ser positivo") Long id
+    ) {
+        return ResponseEntity.ok(service.obtenerPacientePorIdSinEstado(id));
     }
 }
